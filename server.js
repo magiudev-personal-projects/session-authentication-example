@@ -2,10 +2,15 @@ const express = require("express");
 const {default: mongoose} = require("mongoose");
 const MongoStore = require('connect-mongo');
 const session = require("express-session");
+const passport = require("passport");
 
 const {port, dbUrl, sessionSecret} = require("./config");
+const {User} = require("./src/entities/user");
+const local = require("./src/strategies/local");
 
 const app = express();
+app.use(express.urlencoded({extended: true}));
+app.use(express.json());
 
 // Connect with the db or throw an error if it fails
 const dbConnection = mongoose.connect(dbUrl);
@@ -25,11 +30,22 @@ app.use(session({
    cookie: {maxAge: 1000 * 60 * 60 * 24} // Set the expiration date to 1 day (in ms) from now
 }));
 
-// This endpoint serves to illustrate the use of sessions
-app.get("/test-session", (req, res) => {
-    if(req.session.viewCount) req.session.viewCount++;
-    else req.session.viewCount = 1;
-    res.send(`<h1>You have viewed this page ${req.session.viewCount} time(s)</h1>`);
+// Set up passport
+app.use(passport.initialize()); // https://github.com/jaredhanson/passport#middleware
+app.use(passport.session()); // https://github.com/jaredhanson/passport#middleware
+passport.serializeUser((user, done)=> { done(null, user.id) }); // This function saves user data (the user id) in the session. The data is obtained from the strategy.
+passport.deserializeUser( async (id, done)=> { // This function take the data stored in the session, search the user in the db, and saves the user in the request
+    try {
+        const user = await User.findById(id);
+        done(null, user);
+    } catch (error) {
+        done(error);
+    }
 });
+
+// Add the routes
+app.use(require("./src/routes")); 
+
+passport.use(local);
 
 app.listen(port, () => { console.log(`Server listening on port ${port}`)})
